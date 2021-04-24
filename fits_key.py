@@ -9,8 +9,9 @@ from astropy.io import fits
 from astropy.nddata import NDArithmeticMixin
 
 # Create the unit regular expression string from configurable pieces.
-# Default is r'\ \(.*\)$' which matches " (<unit>)" at the end of the FITS
-# card comment
+# Below implements r'\ \(.*\)$' which matches " (<unit>)" at the end
+# of the FITS card comment
+# --> These can eventually go as property in the object
 UNIT_STR_START = ' '
 UNIT_STR_DELIMETERS = '()'
 UNIT_STR_END = ''
@@ -29,101 +30,202 @@ if UNIT_STR_POSITION == 'end':
 KCOMMENT_UNIT_REGEXP = f'{ms}{s}{l}.*{r}{e}{me}'
 
 
+class FitsKeyQuantityMixin():
+    """This belongs in fits.Header.  If it gets there, all of the `self.meta` need to be transformed into just `self`"""
+    def get_fits_key_unit(self, key):
+        """Returns `~astropy.units.Unit` of card if defined, else ``None``"""
+        if self.meta.get(key) is None:
+            raise KeyError(f'No key "{key}" found')
+        kcomment = self.meta.comments[key]
+        # Extract unit together with lead-in and delimiter
+        # https://stackoverflow.com/questions/8569201/get-the-string-within-brackets-in-python
+        m = re.search(KCOMMENT_UNIT_REGEXP, kcomment)
+        if m is None:
+            log.debug(f'no unit matching "(unit)" in "{kcomment}"')
+            return None
+        # Strip off delemeters
+        punit_str = m.group(0)
+        # No escaping needed because within re '[]'
+        s = UNIT_STR_START
+        l = UNIT_STR_DELIMETERS[0]
+        r = UNIT_STR_DELIMETERS[1]
+        e = UNIT_STR_END
+        unit_str = re.sub(f'[{s}{l}{r}{e}]', '', punit_str)
+        try:
+            unit = u.Unit(unit_str)
+        except ValueError as e:
+            log.warning(f'Card comment: {kcomment}')
+            log.warning(e)
+            return None
+        return unit
 
-def get_fits_key_unit(key, meta):
-    if meta.get(key) is None:
-        raise KeyError(f'No key "{key}" found')
-    kcomment = meta.comments[key]
-    # Extract unit together with lead-in and delimiter
-    # https://stackoverflow.com/questions/8569201/get-the-string-within-brackets-in-python
-    m = re.search(KCOMMENT_UNIT_REGEXP, kcomment)
-    if m is None:
-        log.debug(f'no unit matching "(unit)" in "{kcomment}"')
-        return None
-    # Strip off delemeters
-    punit_str = m.group(0)
-    # No escaping needed because within re '[]'
-    s = UNIT_STR_START
-    l = UNIT_STR_DELIMETERS[0]
-    r = UNIT_STR_DELIMETERS[1]
-    e = UNIT_STR_END
-    unit_str = re.sub(f'[{s}{l}{r}{e}]', '', punit_str)
-    try:
-        unit = u.Unit(unit_str)
-    except ValueError as e:
-        log.warning(kcomment)
-        log.warning(e)
-        return None
-    return unit
+    def del_fits_key_unit(self, key):
+        """Deletes `~astropy.units.Unit` of card"""
+        if self.get_fits_key_unit(key) is None:
+            raise ValueError(f'No unit for key "{key}" to delete')
+        kcomment = self.meta.comments[key]
+        kcomment = re.sub(KCOMMENT_UNIT_REGEXP, '', kcomment)
+        self.meta.comments[key] = kcomment
 
-def del_fits_key_unit(key, meta):
-    if get_fits_key_unit(key, meta) is None:
-        raise ValueError(f'No unit for key "{key}" to delete')
-    kcomment = meta.comments[key]
-    kcomment = re.sub(KCOMMENT_UNIT_REGEXP, '', kcomment)
-    meta.comments[key] = kcomment
-    return True
+    def set_fits_key_unit(self, key, unit):
+        """Sets `~astropy.units.Unit` of card"""
+        value = self.meta.get(key)
+        if value is None:
+            raise KeyError('No key "{key}" found')
+        if not isinstance(unit, u.UnitBase):
+            raise ValueError('unit is not an instance of astropy.units.Unit')
+        try:
+            self.del_fits_key_unit(key)
+        except ValueError:
+            pass
+        kcomment = self.meta.comments[key]
+        unit_str = unit.to_string()
+        # Calculate how much room we need for the unit on the end of
+        # kcomment so we can truncate the comment if necessary.  Doing it
+        # this way lets astropy handle the HEIRARCH stuff, which moves the
+        # start column of the comment
+        uroom = len(unit_str) + 1    
+        # Use raw fits.Card object to calculate the card image length to
+        # make sure our unit will fit in.  Ignore warning about converting
+        # cards to HEIRARCH
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=fits.verify.VerifyWarning)
+            c = fits.Card(key, value, kcomment)
+        im = c.image
+        # Find how many spaces are used to pad the comment to 80
+        m = re.search(' *$', im)
+        if m is None:
+            num_spaces = 0
+        else:
+            num_spaces = len(m.group(0))
+        shorten = max(0, uroom - num_spaces)
+        kcomment = kcomment[0:len(kcomment)-shorten]
+        kcomment = f'{kcomment} ({unit_str})'
+        self.meta.comments[key] = kcomment
 
-def set_fits_key_unit(key, unit, meta):
-    value = meta.get(key)
-    if value is None:
-        raise KeyError('No key "{key}" found')
-    if not isinstance(unit, u.UnitBase):
-        raise ValueError('unit is not an instance of astropy.units.Unit')
-    try:
-        del_fits_key_unit(key, meta)
-    except ValueError:
-        pass
-    kcomment = meta.comments[key]
-    unit_str = unit.to_string()
-    # Calculate how much room we need for the unit on the end of
-    # kcomment so we can truncate the comment if necessary.  Doing it
-    # this way lets astropy handle the HEIRARCH stuff, which moves the
-    # start column of the comment
-    uroom = len(unit_str) + 1    
-    # Use raw fits.Card object to calculate the card image length to
-    # make sure our unit will fit in.  Ignore warning about converting
-    # cards to HEIRARCH
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=fits.verify.VerifyWarning)
-        c = fits.Card(key, value, kcomment)
-    im = c.image
-    # Find how many spaces are used to pad the comment to 80
-    m = re.search(' *$', im)
-    if m is None:
-        num_spaces = 0
-    else:
-        num_spaces = len(m.group(0))
-    shorten = max(0, uroom - num_spaces)
-    kcomment = kcomment[0:len(kcomment)-shorten]
-    kcomment = f'{kcomment} ({unit_str})'
-    meta.comments[key] = kcomment
+    def get_fits_key_quantity(self, key):
+        """Gets `~astropy.units.Quantity` of card"""
+        value = self.meta.get(key)
+        if value is None:
+            log.warning(f'No key "{key}" found')
+            return None
+        unit = self.meta.get_fits_key_unit(key)
+        unit = unit or u.dimensionless_unscaled
+        return value*unit
 
-def get_fits_key_quantity(key, meta):
-    value = meta.get(key)
-    if value is None:
-        log.warning(f'No key "{key}" found')
-        return None
-    unit = get_fits_key_unit(key, meta)
-    unit = unit or u.dimensionless_unscaled
-    return value*unit
+    def set_fits_key_quantity(self, key, quantity_comment):
+        """Sets `~astropy.units.Quantity` of card"""
+        if isinstance(quantity_comment, tuple):
+            quantity = quantity_comment[0]
+            comment = quantity_comment[1]
+        else:
+            quantity = quantity_comment
+            comment = None
+        if isinstance(quantity, u.Quantity):
+            value = quantity.value
+            unit = quantity.unit
+        else:
+            value = quantity
+            unit = None
+        self.meta.set(key, value, comment)
+        if unit is not None:
+            set_fits_key_unit(key, unit)
+    
 
-def set_fits_key_quantity(key, quantity_comment, meta):
-    if isinstance(quantity_comment, tuple):
-        quantity = quantity_comment[0]
-        comment = quantity_comment[1]
-    else:
-        quantity = quantity_comment
-        comment = None
-    if isinstance(quantity, u.Quantity):
-        value = quantity.value
-        unit = quantity.unit
-    else:
-        value = quantity
-        unit = None
-    meta.set(key, value, comment)
-    if unit is not None:
-        set_fits_key_unit(key, unit)
+#def get_fits_key_unit(key, meta):
+#    if meta.get(key) is None:
+#        raise KeyError(f'No key "{key}" found')
+#    kcomment = meta.comments[key]
+#    # Extract unit together with lead-in and delimiter
+#    # https://stackoverflow.com/questions/8569201/get-the-string-within-brackets-in-python
+#    m = re.search(KCOMMENT_UNIT_REGEXP, kcomment)
+#    if m is None:
+#        log.debug(f'no unit matching "(unit)" in "{kcomment}"')
+#        return None
+#    # Strip off delemeters
+#    punit_str = m.group(0)
+#    # No escaping needed because within re '[]'
+#    s = UNIT_STR_START
+#    l = UNIT_STR_DELIMETERS[0]
+#    r = UNIT_STR_DELIMETERS[1]
+#    e = UNIT_STR_END
+#    unit_str = re.sub(f'[{s}{l}{r}{e}]', '', punit_str)
+#    try:
+#        unit = u.Unit(unit_str)
+#    except ValueError as e:
+#        log.warning(kcomment)
+#        log.warning(e)
+#        return None
+#    return unit
+#
+#def del_fits_key_unit(key, meta):
+#    if get_fits_key_unit(key, meta) is None:
+#        raise ValueError(f'No unit for key "{key}" to delete')
+#    kcomment = meta.comments[key]
+#    kcomment = re.sub(KCOMMENT_UNIT_REGEXP, '', kcomment)
+#    meta.comments[key] = kcomment
+#    return True
+#
+#def set_fits_key_unit(key, unit, meta):
+#    value = meta.get(key)
+#    if value is None:
+#        raise KeyError('No key "{key}" found')
+#    if not isinstance(unit, u.UnitBase):
+#        raise ValueError('unit is not an instance of astropy.units.Unit')
+#    try:
+#        del_fits_key_unit(key, meta)
+#    except ValueError:
+#        pass
+#    kcomment = meta.comments[key]
+#    unit_str = unit.to_string()
+#    # Calculate how much room we need for the unit on the end of
+#    # kcomment so we can truncate the comment if necessary.  Doing it
+#    # this way lets astropy handle the HEIRARCH stuff, which moves the
+#    # start column of the comment
+#    uroom = len(unit_str) + 1    
+#    # Use raw fits.Card object to calculate the card image length to
+#    # make sure our unit will fit in.  Ignore warning about converting
+#    # cards to HEIRARCH
+#    with warnings.catch_warnings():
+#        warnings.filterwarnings("ignore", category=fits.verify.VerifyWarning)
+#        c = fits.Card(key, value, kcomment)
+#    im = c.image
+#    # Find how many spaces are used to pad the comment to 80
+#    m = re.search(' *$', im)
+#    if m is None:
+#        num_spaces = 0
+#    else:
+#        num_spaces = len(m.group(0))
+#    shorten = max(0, uroom - num_spaces)
+#    kcomment = kcomment[0:len(kcomment)-shorten]
+#    kcomment = f'{kcomment} ({unit_str})'
+#    meta.comments[key] = kcomment
+#
+#def get_fits_key_quantity(key, meta):
+#    value = meta.get(key)
+#    if value is None:
+#        log.warning(f'No key "{key}" found')
+#        return None
+#    unit = get_fits_key_unit(key, meta)
+#    unit = unit or u.dimensionless_unscaled
+#    return value*unit
+#
+#def set_fits_key_quantity(key, quantity_comment, meta):
+#    if isinstance(quantity_comment, tuple):
+#        quantity = quantity_comment[0]
+#        comment = quantity_comment[1]
+#    else:
+#        quantity = quantity_comment
+#        comment = None
+#    if isinstance(quantity, u.Quantity):
+#        value = quantity.value
+#        unit = quantity.unit
+#    else:
+#        value = quantity
+#        unit = None
+#    meta.set(key, value, comment)
+#    if unit is not None:
+#        set_fits_key_unit(key, unit)
 
 def fits_key_arithmetic(meta, operand1, operation, operand2,
                         keylist=None, handle_image=None):
@@ -245,11 +347,24 @@ class FitsKeyArithmeticMixin(NDArithmeticMixin):
 from astropy.nddata import CCDData
 
 flat_fname = '/data/io/IoIO/reduced/Calibration/2020-03-22_B_flat.fits'
-class Test(FitsKeyArithmeticMixin, CCDData):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.arithmetic_keylist = ['satlevel', 'nonlin']
 
+ccd = CCDData.read(flat_fname)
+class Test(FitsKeyQuantityMixin, CCDData):
+    pass
+ccd = Test.read(flat_fname)
+unit = ccd.get_fits_key_unit('EXPTIME')
+print(unit)
+unit = ccd.get_fits_key_unit('GAIN')
+print(unit)
+unit = ccd.get_fits_key_unit('GAIN')
+print(unit)
+ccd.set_fits_key_unit('SATLEVEL', u.m)
+print(ccd.meta.comments['SATLEVEL'])
+
+#class Test(FitsKeyArithmeticMixin, CCDData):
+#    def __init__(self, *args, **kwargs):
+#        super().__init__(*args, **kwargs)
+#        self.arithmetic_keylist = ['satlevel', 'nonlin']
 ##ccd = Test.read(flat_fname)
 ###print(ccd.meta)
 ###ccdd = ccd.divide(10, handle_meta='first_found')
@@ -275,42 +390,43 @@ class Test(FitsKeyArithmeticMixin, CCDData):
 ##    unit = None
 ##print(unit_str)
 #
-flat_fname = '/data/io/IoIO/reduced/Calibration/2020-03-22_B_flat.fits'
-ccd = CCDData.read(flat_fname)
-unit = get_fits_key_unit('EXPTIME', ccd.meta)
-unit = get_fits_key_unit('GAIN', ccd.meta)
-print(ccd.meta.comments['SATLEVEL'])
-unit = get_fits_key_unit('SATLEVEL', ccd.meta)
-print(unit)
-
-set_fits_key_unit('SATLEVEL', u.m, ccd.meta)
-print(ccd.meta.comments['SATLEVEL'])
-
-
-del_fits_key_unit('SATLEVEL', ccd.meta)
-print(ccd.meta.comments['SATLEVEL'])
-
-set_fits_key_unit('SATLEVEL', unit, ccd.meta)
-print(ccd.meta.comments['SATLEVEL'])
-
-print(get_fits_key_quantity('SATLEVEL', ccd.meta))
-
-key = 'SATLEVEL'
-value = 19081.35378864727
-kcomment = ccd.meta.comments[key]
-#c = fits.Card(key, value, kcomment+kcomment)
-c = fits.Card(key, value, kcomment)
-
-kcomment = ccd.meta.comments['OVERSCAN_VALUE']
-print(kcomment)
-ccd.meta.comments['OVERSCAN_VALUE'] = 'make this long' + kcomment 
-
-kcomment = ccd.meta.comments['OVERSCAN_VALUE']
-print(kcomment)
-
-
-unit = u.electron
-set_fits_key_unit('OVERSCAN_VALUE', unit, ccd.meta)
-print(ccd.meta.comments['OVERSCAN_VALUE'])
-
-#set_fits_key_quantity(key, quantity_comment, meta)
+#flat_fname = '/data/io/IoIO/reduced/Calibration/2020-03-22_B_flat.fits'
+#ccd = CCDData.read(flat_fname)
+#unit = get_fits_key_unit('EXPTIME', ccd.meta)
+#unit = get_fits_key_unit('GAIN', ccd.meta)
+#print(ccd.meta.comments['SATLEVEL'])
+#unit = get_fits_key_unit('SATLEVEL', ccd.meta)
+#print(unit)
+#
+#set_fits_key_unit('SATLEVEL', u.m, ccd.meta)
+#print(ccd.meta.comments['SATLEVEL'])
+#
+#
+#del_fits_key_unit('SATLEVEL', ccd.meta)
+#print(ccd.meta.comments['SATLEVEL'])
+#
+#set_fits_key_unit('SATLEVEL', unit, ccd.meta)
+#print(ccd.meta.comments['SATLEVEL'])
+#
+#print(get_fits_key_quantity('SATLEVEL', ccd.meta))
+#
+#key = 'SATLEVEL'
+#value = 19081.35378864727
+#kcomment = ccd.meta.comments[key]
+##c = fits.Card(key, value, kcomment+kcomment)
+#c = fits.Card(key, value, kcomment)
+#
+#kcomment = ccd.meta.comments['OVERSCAN_VALUE']
+#print(kcomment)
+#ccd.meta.comments['OVERSCAN_VALUE'] = 'make this long' + kcomment 
+#
+#kcomment = ccd.meta.comments['OVERSCAN_VALUE']
+#print(kcomment)
+#
+#
+#unit = u.electron
+#set_fits_key_unit('OVERSCAN_VALUE', unit, ccd.meta)
+#print(ccd.meta.comments['OVERSCAN_VALUE'])
+#
+##set_fits_key_quantity(key, quantity_comment, meta)
+#
