@@ -57,7 +57,7 @@ class FitsKeyQuantityHeader(fits.Header):
         else:
             raise ValueError(f'Unknown unit string position {self.unit_str_position}.  Expecting "start" or "end"')
         return f'{ms}{s}{l}.*{r}{e}{me}'
-        
+
 
     def get_fits_key_unit(self, key):
         """Returns `~astropy.units.Unit` of card if defined, else ``None``"""
@@ -95,19 +95,9 @@ class FitsKeyQuantityHeader(fits.Header):
         print(self._unit_regexp)
         kcomment = re.sub(self._unit_regexp, '', kcomment)
         self.comments[key] = kcomment
+        self._cards[self._cardindex(key)].comment = kcomment
 
-    def set_fits_key_unit(self, key, unit):
-        """Sets `~astropy.units.Unit` of card"""
-        value = self.get(key)
-        if value is None:
-            raise KeyError('No key "{key}" found')
-        if not isinstance(unit, u.UnitBase):
-            raise ValueError('unit is not an instance of astropy.units.Unit')
-        try:
-            self.del_fits_key_unit(key)
-        except ValueError:
-            pass
-        kcomment = self.comments[key]
+    def set_fits_card_unit(self, key, value, kcomment, unit):
         unit_str = unit.to_string()
         # Calculate how much room we need for the unit on the end of
         # kcomment so we can truncate the comment if necessary.  Doing it
@@ -130,6 +120,22 @@ class FitsKeyQuantityHeader(fits.Header):
         shorten = max(0, uroom - num_spaces)
         kcomment = kcomment[0:len(kcomment)-shorten]
         kcomment = f'{kcomment} ({unit_str})'
+        return kcomment
+
+    def set_fits_key_unit(self, key, unit):
+        """Sets `~astropy.units.Unit` of card"""
+        value = self.get(key)
+        if value is None:
+            raise KeyError('No key "{key}" found')
+        if not isinstance(unit, u.UnitBase):
+            raise ValueError('unit is not an instance of astropy.units.Unit')
+        try:
+            self.del_fits_key_unit(key)
+        except ValueError:
+            pass
+
+        # Extracted code and gave the necessary variables to the function
+        kcomment = self.set_fits_card_unit(key, value, self.comments[key], unit)
         self.comments[key] = kcomment
 
     def get_fits_key_quantity(self, key, return_key_as_quantity=None):
@@ -256,9 +262,18 @@ class FitsKeyQuantityHeader(fits.Header):
         if value is None:
             value = UNDEFINED
         if card:
+
+            # Making sure the unit is redefined while also preserving the previous comment
+            if comment is None:
+                comment = card.comment
+
             card.value = value
             if comment is not None:
-                card.comment = comment
+                # Using the comment truncing function here as well
+                if unit is not None:
+                    card.comment = self.set_fits_card_unit(card.keyword, value, comment, unit)
+                else:
+                    card.comment = comment
             # --> insert unit somehow
             if card._modified:
                 self._modified = True
