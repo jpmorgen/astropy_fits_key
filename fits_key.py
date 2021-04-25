@@ -25,7 +25,8 @@ class FitsKeyQuantityHeader(fits.Header):
     
     """
     """
-    def __init__(*args,
+    def __init__(self,
+             *args,
              return_key_as_quantity=None,
              unit_str_start=None,
              unit_str_delimeters=None,
