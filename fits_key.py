@@ -6,50 +6,76 @@ import warnings
 import astropy.units as u
 from astropy import log
 from astropy.io import fits
+from astropy.io.fits.card import Card, UNDEFINED
 from astropy.nddata import NDArithmeticMixin
 
 # Create the unit regular expression string from configurable pieces.
 # Below implements r'\ \(.*\)$' which matches " (<unit>)" at the end
 # of the FITS card comment
-# --> These can eventually go as property in the object
-UNIT_STR_START = ' '
-UNIT_STR_DELIMETERS = '()'
-UNIT_STR_END = ''
-UNIT_STR_POSITION = 'end'
-s = re.escape(UNIT_STR_START)
-l = re.escape(UNIT_STR_DELIMETERS[0])
-r = re.escape(UNIT_STR_DELIMETERS[1])
-e = re.escape(UNIT_STR_END)
-UNIT_STR_POSITION = UNIT_STR_POSITION.lower()
-if UNIT_STR_POSITION in ['start', 'beginning']:
-    ms = '^'
-    me = ''
-if UNIT_STR_POSITION == 'end':
-    ms = ''
-    me = '$'
-KCOMMENT_UNIT_REGEXP = f'{ms}{s}{l}.*{r}{e}{me}'
 
+####### PR1 ########
+class FitsKeyQuantityHeader(fits.Header):
+    # --> This would eventually be a conf item
+    return_key_as_quantity = 'never'
+    # --> These could be conf items or standardized
+    unit_str_start = ' '
+    unit_str_delimeters = '()'
+    unit_str_end = ''
+    unit_str_position = 'end'
+    
+    """
+    """
+    def __init__(*args,
+             return_key_as_quantity=None,
+             unit_str_start=None,
+             unit_str_delimeters=None,
+             unit_str_end=None,
+             unit_str_position=None,
+             **kwargs):
+        super().__init__(*args, **kwargs)
+        self.return_key_as_quantity = return_key_as_quantity or self.return_key_as_quantity
+        self.unit_str_start = unit_str_start or self.unit_str_start
+        self.unit_str_delimeters = unit_str_delimeters or self.unit_str_delimeters
+        self.unit_str_end = unit_str_end or self.unit_str_end
+        self.unit_str_position = unit_str_position or self.unit_str_position
+        
+        
+    @property
+    def _unit_regexp(self):
+        s = re.escape(self.unit_str_start)
+        l = re.escape(self.unit_str_delimeters[0])
+        r = re.escape(self.unit_str_delimeters[1])
+        e = re.escape(self.unit_str_end)
+        unit_str_position = self.unit_str_position.lower()
+        if unit_str_position in ['start', 'beginning']:
+            ms = '^'
+            me = ''
+        elif unit_str_position == 'end':
+            ms = ''
+            me = '$'
+        else:
+            raise ValueError(f'Unknown unit string position {self.unit_str_position}.  Expecting "start" or "end"')
+        return f'{ms}{s}{l}.*{r}{e}{me}'
+        
 
-class FitsKeyQuantityMixin():
-    """This belongs in fits.Header.  If it gets there, all of the `self.meta` need to be transformed into just `self`"""
     def get_fits_key_unit(self, key):
         """Returns `~astropy.units.Unit` of card if defined, else ``None``"""
-        if self.meta.get(key) is None:
-            raise KeyError(f'No key "{key}" found')
-        kcomment = self.meta.comments[key]
+        #if self.get(key) is None:
+        #    raise KeyError(f'No key "{key}" found')
+        kcomment = self.comments[key]
         # Extract unit together with lead-in and delimiter
         # https://stackoverflow.com/questions/8569201/get-the-string-within-brackets-in-python
-        m = re.search(KCOMMENT_UNIT_REGEXP, kcomment)
+        m = re.search(self._unit_regexp, kcomment)
         if m is None:
             log.debug(f'no unit matching "(unit)" in "{kcomment}"')
             return None
         # Strip off delemeters
         punit_str = m.group(0)
         # No escaping needed because within re '[]'
-        s = UNIT_STR_START
-        l = UNIT_STR_DELIMETERS[0]
-        r = UNIT_STR_DELIMETERS[1]
-        e = UNIT_STR_END
+        s = self.unit_str_start
+        l = self.unit_str_delimeters[0]
+        r = self.unit_str_delimeters[1]
+        e = self.unit_str_end
         unit_str = re.sub(f'[{s}{l}{r}{e}]', '', punit_str)
         try:
             unit = u.Unit(unit_str)
@@ -63,13 +89,15 @@ class FitsKeyQuantityMixin():
         """Deletes `~astropy.units.Unit` of card"""
         if self.get_fits_key_unit(key) is None:
             raise ValueError(f'No unit for key "{key}" to delete')
-        kcomment = self.meta.comments[key]
-        kcomment = re.sub(KCOMMENT_UNIT_REGEXP, '', kcomment)
-        self.meta.comments[key] = kcomment
+        kcomment = self.comments[key]
+        print(kcomment)
+        print(self._unit_regexp)
+        kcomment = re.sub(self._unit_regexp, '', kcomment)
+        self.comments[key] = kcomment
 
     def set_fits_key_unit(self, key, unit):
         """Sets `~astropy.units.Unit` of card"""
-        value = self.meta.get(key)
+        value = self.get(key)
         if value is None:
             raise KeyError('No key "{key}" found')
         if not isinstance(unit, u.UnitBase):
@@ -78,19 +106,19 @@ class FitsKeyQuantityMixin():
             self.del_fits_key_unit(key)
         except ValueError:
             pass
-        kcomment = self.meta.comments[key]
+        kcomment = self.comments[key]
         unit_str = unit.to_string()
         # Calculate how much room we need for the unit on the end of
         # kcomment so we can truncate the comment if necessary.  Doing it
         # this way lets astropy handle the HEIRARCH stuff, which moves the
         # start column of the comment
         uroom = len(unit_str) + 1    
-        # Use raw fits.Card object to calculate the card image length to
+        # Use raw Card object to calculate the card image length to
         # make sure our unit will fit in.  Ignore warning about converting
         # cards to HEIRARCH
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=fits.verify.VerifyWarning)
-            c = fits.Card(key, value, kcomment)
+            c = Card(key, value, kcomment)
         im = c.image
         # Find how many spaces are used to pad the comment to 80
         m = re.search(' *$', im)
@@ -101,14 +129,17 @@ class FitsKeyQuantityMixin():
         shorten = max(0, uroom - num_spaces)
         kcomment = kcomment[0:len(kcomment)-shorten]
         kcomment = f'{kcomment} ({unit_str})'
-        self.meta.comments[key] = kcomment
+        self.comments[key] = kcomment
 
-    def get_fits_key_quantity(self, key):
+    def get_fits_key_quantity(self, key, return_key_as_quantity=None):
         """Gets `~astropy.units.Quantity` of card"""
-        value = self.meta.get(key)
-        if value is None:
-            log.warning(f'No key "{key}" found')
-            return None
+        rkaq = return_key_as_quantity or self.return_key_as_quantity
+        if rkaq not in ['never', 'recognized', 'always']:
+            raise ValueError(f'Unrecognized value for "return_key_as_quantity": {rkaq}')
+        #value = self.get(key)
+        #if value is None:
+        #    raise KeyError(f'No key "{key}" found')
+        #    return None
         unit = self.get_fits_key_unit(key)
         unit = unit or u.dimensionless_unscaled
         return value*unit
@@ -127,11 +158,116 @@ class FitsKeyQuantityMixin():
         else:
             value = quantity
             unit = None
-        self.meta.set(key, value, comment)
+        self.set(key, value, comment)
         if unit is not None:
             set_fits_key_unit(key, unit)
-    
 
+    #@property
+    #def return_key_as_quantity(self):
+    #    return self._return_key_as_quantity
+    #
+    #@return_key_as_quantity.setter
+    #def return_key_as_quantity(self, value):
+    #    value = value.lower()
+    #    if value not in ['never', 'recognized', 'always']:
+    #        raise ValueError('Unrecognized value for "return_key_as_quantity": {value}')
+    #    self._return_key_as_quantity = value
+        
+    # --> These were a little too complex to surgically override
+    def __getitem__(self, key):
+        if isinstance(key, slice):
+            return self.__class__([copy.copy(c) for c in self._cards[key]])
+        elif self._haswildcard(key):
+            return self.__class__([copy.copy(self._cards[idx])
+                                   for idx in self._wildcardmatch(key)])
+        elif isinstance(key, str):
+            key = key.strip()
+            if key.upper() in Card._commentary_keywords:
+                key = key.upper()
+                # Special case for commentary cards
+                return _HeaderCommentaryCards(self, key)
+
+        if isinstance(key, tuple):
+            keyword = key[0]
+        else:
+            keyword = key
+
+        card = self._cards[self._cardindex(key)]
+
+        if card.field_specifier is not None and keyword == card.rawkeyword:
+            # This is RVKC; if only the top-level keyword was specified return
+            # the raw value, not the parsed out float value
+            return card.rawvalue
+
+        value = card.value
+        if value == UNDEFINED:
+            return None
+
+        ############### --> New stuff <-- #############
+        rkaq = self.return_key_as_quantity
+        if rkaq not in ['never', 'recognized', 'always']:
+            raise ValueError(f'Unrecognized value for "return_key_as_quantity": {rkaq}')
+        if rkaq == 'never':
+            return value
+        unit = self.get_fits_key_unit(key)
+        if rkaq == 'always' and unit is None:
+            return value*u.dimensionless_unscaled
+        if unit is None:
+            return value
+        return value*unit
+
+    def __setitem__(self, key, value):
+        if self._set_slice(key, value, self):
+            return
+
+        if isinstance(value, tuple):
+            if len(value) > 2:
+                raise ValueError(
+                    'A Header item may be set with either a scalar value, '
+                    'a 1-tuple containing a scalar value, or a 2-tuple '
+                    'containing a scalar value and comment string.')
+            if len(value) == 1:
+                value, comment = value[0], None
+                if value is None:
+                    value = UNDEFINED
+            elif len(value) == 2:
+                value, comment = value
+                if value is None:
+                    value = UNDEFINED
+                if comment is None:
+                    comment = ''
+        else:
+            comment = None
+
+        ############### --> New stuff <-- #############
+        if isinstance(value, u.Quantity):
+            unit = value.unit
+            value = value.value
+        else:
+            unit = None
+
+        ############### --> Original stuff <-- #############
+        card = None
+        if isinstance(key, int):
+            card = self._cards[key]
+        elif isinstance(key, tuple):
+            card = self._cards[self._cardindex(key)]
+        if value is None:
+            value = UNDEFINED
+        if card:
+            card.value = value
+            if comment is not None:
+                card.comment = comment
+            # --> insert unit somehow
+            if card._modified:
+                self._modified = True
+        else:
+            # If we get an IndexError that should be raised; we don't allow
+            # assignment to non-existing indices
+            self._update((key, value, comment))
+
+
+####### PR2 ########
 def fits_key_arithmetic(meta, operand1, operation, operand2,
                         keylist=None, handle_image=None):
     """Apply arithmetic to FITS keywords
@@ -251,55 +387,70 @@ class FitsKeyArithmeticMixin(NDArithmeticMixin):
 
 from astropy.nddata import CCDData
 
-print('########')
+print('####### PR1 ########')
 
+# Make a basic CCD with hdr
 meta = {'EXPTIME': 10,
         'CAMERA': 'SX694'}
+hdr = FitsKeyQuantityHeader(meta)
+ccd = CCDData(0, unit=u.dimensionless_unscaled, meta=hdr)
+# Add some comment text
+ccd.meta.comments['EXPTIME'] = 'Exposure time'
+kcomment = ccd.meta.comments['EXPTIME']
+print(f'original EXPTIME comment: "{kcomment}"')
 
-hdr = fits.Header(meta)
-ccd = Test(0, unit=u.dimensionless_unscaled, meta=hdr)
-
-
-
-flat_fname = '/data/io/IoIO/reduced/Calibration/2020-03-22_B_flat.fits'
-
-ccd = CCDData.read(flat_fname)
-class Test(FitsKeyQuantityMixin, CCDData):
-    pass
-ccd = Test.read(flat_fname)
-unit = ccd.get_fits_key_unit('EXPTIME')
-print(unit)
-unit = ccd.get_fits_key_unit('GAIN')
-print(unit)
-unit = ccd.get_fits_key_unit('SATLEVEL')
-print(unit)
-ccd.set_fits_key_unit('SATLEVEL', u.m)
-print(ccd.meta.comments['SATLEVEL'])
-
-ccd.del_fits_key_unit('SATLEVEL')
-print(ccd.meta.comments['SATLEVEL'])
-
-ccd.set_fits_key_unit('SATLEVEL', unit)
-print(ccd.meta.comments['SATLEVEL'])
-
-print(ccd.get_fits_key_quantity('SATLEVEL'))
-
-#key = 'SATLEVEL'
-#value = 19081.35378864727
-#kcomment = ccd.meta.comments[key]
-##c = fits.Card(key, value, kcomment+kcomment)
-#c = fits.Card(key, value, kcomment)
-
-kcomment = ccd.meta.comments['OVERSCAN_VALUE']
+print(ccd.meta.get_fits_key_unit('EXPTIME'))
+ccd.meta.set_fits_key_unit('EXPTIME', u.s)
+print(ccd.meta.get_fits_key_unit('EXPTIME'))
+kcomment = ccd.meta.comments['EXPTIME']
 print(kcomment)
-ccd.meta.comments['OVERSCAN_VALUE'] = 'make this long' + kcomment 
+print(ccd.meta.get_fits_key_unit('CAMERA'))
 
-kcomment = ccd.meta.comments['OVERSCAN_VALUE']
-print(kcomment)
+print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
+ccd.meta.return_key_as_quantity = 'recognized'
+print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
 
-unit = u.electron
-ccd.set_fits_key_unit('OVERSCAN_VALUE', unit)
-print(ccd.meta.comments['OVERSCAN_VALUE'])
+#ccd.meta['EXPTIME'] = 11
+
+#ccd.meta['EXPTIME'] = 11*u.m
+#print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
+ccd.meta.del_fits_key_unit('EXPTIME')
+ccd.meta[0] = 11*u.m
+print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
+
+#flat_fname = '/data/io/IoIO/reduced/Calibration/2020-03-22_B_flat.fits'
+#
+#ccd = CCDData.read(flat_fname)
+#class Test(FitsKeyQuantityMixin, CCDData):
+#    pass
+#ccd = Test.read(flat_fname)
+#unit = ccd.get_fits_key_unit('EXPTIME')
+#print(unit)
+#unit = ccd.get_fits_key_unit('GAIN')
+#print(unit)
+#unit = ccd.get_fits_key_unit('SATLEVEL')
+#print(unit)
+#ccd.set_fits_key_unit('SATLEVEL', u.m)
+#print(ccd.meta.comments['SATLEVEL'])
+#
+#ccd.del_fits_key_unit('SATLEVEL')
+#print(ccd.meta.comments['SATLEVEL'])
+#
+#ccd.set_fits_key_unit('SATLEVEL', unit)
+#print(ccd.meta.comments['SATLEVEL'])
+#
+#print(ccd.get_fits_key_quantity('SATLEVEL'))
+#
+#kcomment = ccd.meta.comments['OVERSCAN_VALUE']
+#print(kcomment)
+#ccd.meta.comments['OVERSCAN_VALUE'] = 'make this long' + kcomment 
+#
+#kcomment = ccd.meta.comments['OVERSCAN_VALUE']
+#print(kcomment)
+#
+#unit = u.electron
+#ccd.set_fits_key_unit('OVERSCAN_VALUE', unit)
+#print(ccd.meta.comments['OVERSCAN_VALUE'])
 
 
 #set_fits_key_quantity(key, quantity_comment, meta)
