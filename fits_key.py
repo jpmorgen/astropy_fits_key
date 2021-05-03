@@ -1,5 +1,8 @@
-"""Supplements to astropy.nddata
+"""Draft pull requests to implement units, including arithmetic, in FITS headers
 """
+import inspect
+
+
 import re
 import warnings
 
@@ -30,17 +33,18 @@ class QuantityCard(Card):
     
     """
     """
-    def __init__(self,
-             *args,
-             return_key_as_quantity=None,
-             unit_str_start=None,
-             unit_str_delimeters=None,
-             unit_str_end=None,
-             unit_str_position=None,
-             **kwargs):
+    def __init__(self, keyword=None, value=None, comment=None,
+                 return_key_as_quantity=None,
+                 unit_str_start=None,
+                 unit_str_delimeters=None,
+                 unit_str_end=None,
+                 unit_str_position=None,
+                 **kwargs):
+        # For backwards compatibility, support the 'key' keyword argument:
+        if keyword is None and 'key' in kwargs:
+            keyword = kwargs['key']
 
         ############### --> New stuff <-- #############
-        self._unit = None
 
         # --> Again, these would be conf items
         self.return_key_as_quantity = return_key_as_quantity or self.return_key_as_quantity
@@ -51,7 +55,55 @@ class QuantityCard(Card):
     
         ############### --> Original stuff <-- #############
 
-        super().__init__(*args, **kwargs)
+        self._keyword = None
+        self._value = None
+        self._comment = None
+        ############### --> New stuff <-- #############
+        self._unit = None
+        ############### --> Original stuff <-- #############
+        self._valuestring = None
+        self._image = None
+
+        # This attribute is set to False when creating the card from a card
+        # image to ensure that the contents of the image get verified at some
+        # point
+        self._verified = True
+
+        # A flag to conveniently mark whether or not this was a valid HIERARCH
+        # card
+        self._hierarch = False
+
+        # If the card could not be parsed according the the FITS standard or
+        # any recognized non-standard conventions, this will be True
+        self._invalid = False
+
+        self._field_specifier = None
+
+        # These are used primarily only by RVKCs
+        self._rawkeyword = None
+        self._rawvalue = None
+
+        ############### --> MOVED FROM BELOW <-- #############
+        # Set user-provided comment first so units from value as
+        # Quantity do not get overwritten
+        if comment is not None:
+            self.comment = comment
+
+        if not (keyword is not None and value is not None and
+                self._check_if_rvkc(keyword, value)):
+            # If _check_if_rvkc passes, it will handle setting the keyword and
+            # value
+            if keyword is not None:
+                self.keyword = keyword
+            if value is not None:
+                self.value = value
+        ############## --> MOVED TO ABOVE <-- #############
+        #if comment is not None:
+        #    self.comment = comment
+
+        ############### --> Original stuff <-- #############
+        self._modified = False
+        self._valuemodified = False
 
     @property
     def value(self):
@@ -115,11 +167,10 @@ class QuantityCard(Card):
 
         ############### --> New stuff <-- #############
         if isinstance(value, Quantity):
-            self._unit = value.unit
+            self.unit = value.unit
             value = value.value
         else:
-            self._unit = None
-            self.comment = re.sub(self._full_unit_regexp, '', self.comment)
+            self.unit = None
         ############### --> Original stuff <-- #############
 
         if not isinstance(value,
@@ -175,9 +226,7 @@ class QuantityCard(Card):
         if not self.field_specifier:
             self.value = ''
             ############### --> New stuff <-- #############
-            self._unit = None
-            # --> Should this be self._comment?
-            self.comment = re.sub(self._full_unit_regexp, '', self.comment)
+            del self.unit
         ############### --> Original stuff <-- #############
         else:
             raise AttributeError('Values cannot be deleted from record-valued '
@@ -228,12 +277,12 @@ class QuantityCard(Card):
         if comment != oldcomment:
             self._comment = comment
             ############### --> New stuff <-- #############
-            oldunit = self._unit
+            oldunit = self.unit
             newunit = self._get_comment_unit(comment)
             if newunit != oldunit:
                 # Change the card unit, but raise warning -- input via
                 # Quantity should be prefered
-                self._unit = newunit
+                self.unit = newunit
                 if oldunit:
                     oldunit_str = oldunit.to_string()
                 else:
@@ -258,6 +307,9 @@ class QuantityCard(Card):
                 print(
                     f'Changing unit of card from {oldunit_str} to '
                     f'{newunit_str}')
+                print('called from', inspect.stack()[1].function, inspect.stack()[1].filename)
+
+
             ############### --> Original stuff <-- #############
             self._modified = True
 
@@ -333,7 +385,6 @@ class QuantityCard(Card):
         l = re.escape(self.unit_str_delimeters[0])
         r = re.escape(self.unit_str_delimeters[1])
         e = re.escape(self.unit_str_end)
-        print(f'[{s}{l}{r}{e}]', '', punit_str)
         unit_str = re.sub(f'[{s}{l}{r}{e}]', '', punit_str)
         try:
             unit = u.Unit(unit_str)
@@ -373,18 +424,19 @@ class QuantityCard(Card):
             # beyond the end of the legal card, create a card image
             # with enough room for the unit string and add the unit
             # string back into the comment.  Doing this clears
-            # self._unit, so save it
+            # self._unit, so save it and put it back at the end
             unit = self._unit
             fus = self._full_unit_str(unit)
             uroom = len(fus)
             card_length = self.length - uroom
-            self.comment = re.sub(self._full_unit_regexp, '', self.comment)
+            self._comment = re.sub(self._full_unit_regexp, '', self.comment)
             # Save image to avoid extra calls in _split
             self._image = self._format_image(card_length)
             card_length = self.length
             # Now we want to add the unit directly to the comment.
             comment = self._parse_comment()
-            self.comment = self._set_comment_unit(comment, unit)
+            self._comment = self._set_comment_unit(comment, unit)
+            self._unit = unit
         elif card_length is None:
             card_length = self.length
 
@@ -439,6 +491,102 @@ class QuantityCard(Card):
                 output = output[:card_length]
         return output
         ############### --> modifications for card_length <-- #############
+
+
+class QuantityHeader(Header):
+    def append(self, card=None, useblanks=True, bottom=False, end=False):
+        """
+        Appends a new keyword+value card to the end of the Header, similar
+        to `list.append`.
+
+        By default if the last cards in the Header have commentary keywords,
+        this will append the new keyword before the commentary (unless the new
+        keyword is also commentary).
+
+        Also differs from `list.append` in that it can be called with no
+        arguments: In this case a blank card is appended to the end of the
+        Header.  In the case all the keyword arguments are ignored.
+
+        Parameters
+        ----------
+        card : str, tuple
+            A keyword or a (keyword, value, [comment]) tuple representing a
+            single header card; the comment is optional in which case a
+            2-tuple may be used
+
+        useblanks : bool, optional
+            If there are blank cards at the end of the Header, replace the
+            first blank card so that the total number of cards in the Header
+            does not increase.  Otherwise preserve the number of blank cards.
+
+        bottom : bool, optional
+            If True, instead of appending after the last non-commentary card,
+            append after the last non-blank card.
+
+        end : bool, optional
+            If True, ignore the useblanks and bottom options, and append at the
+            very end of the Header.
+
+        """
+
+        if isinstance(card, str):
+        ############### --> modifications for local use <-- #############
+            card = QuantityCard(card)
+        elif isinstance(card, tuple):
+            card = QuantityCard(*card)
+        ############### --> end modifications for local use <-- #############
+        elif card is None:
+            card = Card()
+        elif not isinstance(card, Card):
+            raise ValueError(
+                'The value appended to a Header must be either a keyword or '
+                '(keyword, value, [comment]) tuple; got: {!r}'.format(card))
+
+        if not end and card.is_blank:
+            # Blank cards should always just be appended to the end
+            end = True
+
+        if end:
+            self._cards.append(card)
+            idx = len(self._cards) - 1
+        else:
+            idx = len(self._cards) - 1
+            while idx >= 0 and self._cards[idx].is_blank:
+                idx -= 1
+
+            if not bottom and card.keyword not in Card._commentary_keywords:
+                while (idx >= 0 and
+                       self._cards[idx].keyword in Card._commentary_keywords):
+                    idx -= 1
+
+            idx += 1
+            self._cards.insert(idx, card)
+            self._updateindices(idx)
+
+        keyword = Card.normalize_keyword(card.keyword)
+        self._keyword_indices[keyword].append(idx)
+        if card.field_specifier is not None:
+            self._rvkc_indices[card.rawkeyword].append(idx)
+
+        if not end:
+            # If the appended card was a commentary card, and it was appended
+            # before existing cards with the same keyword, the indices for
+            # cards with that keyword may have changed
+            if not bottom and card.keyword in Card._commentary_keywords:
+                self._keyword_indices[keyword].sort()
+
+            # Finally, if useblanks, delete a blank cards from the end
+            if useblanks and self._countblanks():
+                # Don't do this unless there is at least one blanks at the end
+                # of the header; we need to convert the card to its string
+                # image to see how long it is.  In the vast majority of cases
+                # this will just be 80 (Card.length) but it may be longer for
+                # CONTINUE cards
+                self._useblanks(len(str(card)) // Card.length)
+
+        self._modified = True
+
+
 
 
 print('####### PR1 ########')
@@ -513,8 +661,8 @@ print('print(c.comment)')
 print(c.comment)
 
 print('+++Extend comment')
-print(">>> c.comment = 'This is the creation of a reallyreallyreallylongcomment'")
-c.comment = 'This is the creation of a reallyreallyreallylongcomment'
+print(">>> c.comment = 'This is the creation of a reallyreallyreallylon'")
+c.comment = 'This is the creation of a reallyreallyreallylon'
 print('print(c.image)')
 print(c.image)
 print('print(c.value)')
@@ -543,10 +691,15 @@ print('print(c.comment)')
 print(c.comment)
 
 print('+++Change unit location to beginning of comment')
+print("c.return_key_as_quantity = 'always'")
 c.return_key_as_quantity = 'always'
+print("c.unit_str_start = ''")
 c.unit_str_start = ''
+print("c.unit_str_delimeters = '[]'")
 c.unit_str_delimeters = '[]'
+print("c.unit_str_end = ' '")
 c.unit_str_end = ' '
+print("c.unit_str_position = 'start'")
 c.unit_str_position = 'start'
 
 print('+++Put new unit position back into extended comment')
@@ -561,13 +714,48 @@ print(c.comment)
 
 print('+++Put into header')
 print('hdr = Header([c])')
-hdr = Header([c])
+hdr = QuantityHeader([c])
 print("hdr['EXPTIME']")
 print(hdr['EXPTIME'])
+print("hdr.get('EXPTIME')")
+print(hdr.get('EXPTIME'))
 print("hdr.comments['EXPTIME']")
 print(hdr.comments['EXPTIME'])
 print("hdr.cards['EXPTIME'].unit")
 print(hdr.cards['EXPTIME'].unit)
+
+#print(hdr['EXPTIME'] = ()
+print('+++ --> Header object assignment will need some work')
+print("hdr['EXPTIME'] = (12*u.s, 'Try to assign through Header object')")
+hdr['EXPTIME'] = (12*u.s, 'Try to assign through Header object')
+print(hdr['EXPTIME'])
+print("hdr.get('EXPTIME')")
+print(hdr.get('EXPTIME'))
+print("hdr.comments['EXPTIME']")
+print(hdr.comments['EXPTIME'])
+print("hdr.cards['EXPTIME'].unit")
+print(hdr.cards['EXPTIME'].unit)
+
+print("+++create a default card with units from scratch")
+print("c = QuantityCard('EXPTIME', 12*u.s, 'This is a new card')")
+c = QuantityCard('EXPTIME', 12*u.s, 'This is a new card')
+print('print(c.image)')
+print(c.image)
+print('print(c.value)')
+print(c.value)
+print('print(c.comment)')
+print(c.comment)
+
+print("+++turn on return key as Quantity feature")
+c.return_key_as_quantity = 'always'
+print('print(c.image)')
+print(c.image)
+print('print(c.value)')
+print(c.value)
+print('print(c.comment)')
+print(c.comment)
+
+
 
 ####### PR2 ########
 def fits_key_arithmetic(meta, operand1, operation, operand2,
@@ -631,12 +819,10 @@ def fits_key_arithmetic(meta, operand1, operation, operand2,
             del meta[k]
             log.debug(f'Cannot express operand2 as single number, deleting {k}')
         else:
-            # This code assume that units of key are the same as units
-            # of operand1, so it is a good fallback if key has no
-            # get_fits_key_unit
-            comment = meta.comments[k]
-            # Strip off old units, assuming they are separated by space
-            comment, _ = comment.rsplit(maxsplit=1)
+            try:
+                unit = meta.cards(k).unit
+            except:
+                unit = operand1.unit
 
             # Do the calculation with or without units
             if operand1.unit is None and operand2.unit is None:
@@ -651,8 +837,10 @@ def fits_key_arithmetic(meta, operand1, operation, operand2,
                 v = operation(v * operand1.unit,
                               o2 * operand2.unit)
 
-            comment = f'{comment} ({v.unit.to_string()})'
-            meta[k] = (v.value, comment)
+            try:
+                meta[k] = v
+            except:
+                meta[k] = v.value
     return meta        
 
 class FitsKeyArithmeticMixin(NDArithmeticMixin):
@@ -686,6 +874,59 @@ class FitsKeyArithmeticMixin(NDArithmeticMixin):
         kwargs['meta'] = newmeta
         return result, kwargs
 
+print('####### PR2 ########')
+
+print('Prepare QuantityHeader and FitsKeyArithmeticCCDData.  See code for details')
+print('which sets SATLEVEL and NONLIN as the cards that participate in the arithmetic')
+
+class FitsKeyArithmeticCCDData(FitsKeyArithmeticMixin, CCDData):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.arithmetic_keylist = ['satlevel', 'nonlin']
+
+meta = {'EXPTIME': 10*u.s,
+        'CAMERA': 'SX694',
+        'SATLEVEL': 2**16*u.adu,
+        'NONLIN': 40000*u.adu}
+hdr = QuantityHeader(meta)
+ccd = FitsKeyArithmeticCCDData(18000*u.adu, meta=hdr)
+print('CCDData and unit:', ccdd, ccdd.unit)
+print(ccdd.meta.cards)
+print('+++divide by scalar 10')
+ccdd = ccd.divide(10, handle_meta='first_found')
+print(ccdd, ccdd.unit)
+print(ccdd.meta.cards)
+
+print('+++divide by Quantity 10*u.s')
+ccdd = ccd.divide(10*u.s, handle_meta='first_found')
+print('CCDData and unit:', ccdd, ccdd.unit)
+print(ccdd.meta.cards)
+
+print('+++divide by Quantity 10*u.adu/u.electron')
+ccdd = ccd.divide(10*u.adu/u.electron, handle_meta='first_found')
+print('CCDData and unit:', ccdd, ccdd.unit)
+print(ccdd.meta.cards)
+
+print('+++repeat for non-quanity Header')
+
+meta = {'EXPTIME': 10,
+        'CAMERA': 'SX694',
+        'SATLEVEL': 2**16,
+        'NONLIN': 40000}
+hdr = Header(meta)
+ccd = FitsKeyArithmeticCCDData(18000*u.adu, meta=hdr)
+print('CCDData and unit:', ccdd, ccdd.unit)
+print(ccd.meta.cards)
+print('+++divide by scalar 10')
+ccdd = ccd.divide(10, handle_meta='first_found')
+print('CCDData and unit:', ccdd, ccdd.unit)
+print(ccdd.meta.cards)
+
+
+
+
+## ccd = CCDData(0, unit=u.dimensionless_unscaled, meta=hdr)
+## # Add some comment text
 
 
 
