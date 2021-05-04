@@ -27,7 +27,7 @@ class QuantityCard(Card):
     return_key_as_quantity = 'never'
     # --> These could be conf items or standardized
     unit_str_start = ' '
-    unit_str_delimeters = '()'
+    unit_str_delimiters = '()'
     unit_str_end = ''
     unit_str_position = 'end'
     
@@ -36,7 +36,7 @@ class QuantityCard(Card):
     def __init__(self, keyword=None, value=None, comment=None,
                  return_key_as_quantity=None,
                  unit_str_start=None,
-                 unit_str_delimeters=None,
+                 unit_str_delimiters=None,
                  unit_str_end=None,
                  unit_str_position=None,
                  **kwargs):
@@ -49,7 +49,7 @@ class QuantityCard(Card):
         # --> Again, these would be conf items
         self.return_key_as_quantity = return_key_as_quantity or self.return_key_as_quantity
         self.unit_str_start = unit_str_start or self.unit_str_start
-        self.unit_str_delimeters = unit_str_delimeters or self.unit_str_delimeters
+        self.unit_str_delimiters = unit_str_delimiters or self.unit_str_delimiters
         self.unit_str_end = unit_str_end or self.unit_str_end
         self.unit_str_position = unit_str_position or self.unit_str_position
     
@@ -357,8 +357,8 @@ class QuantityCard(Card):
     @property
     def _full_unit_regexp(self):
         s = re.escape(self.unit_str_start)
-        l = re.escape(self.unit_str_delimeters[0])
-        r = re.escape(self.unit_str_delimeters[1])
+        l = re.escape(self.unit_str_delimiters[0])
+        r = re.escape(self.unit_str_delimiters[1])
         e = re.escape(self.unit_str_end)
         unit_str_position = self.unit_str_position.lower()
         if unit_str_position in ['start', 'beginning']:
@@ -382,8 +382,8 @@ class QuantityCard(Card):
         # Strip off delemeters
         punit_str = m.group(0)
         s = re.escape(self.unit_str_start)
-        l = re.escape(self.unit_str_delimeters[0])
-        r = re.escape(self.unit_str_delimeters[1])
+        l = re.escape(self.unit_str_delimiters[0])
+        r = re.escape(self.unit_str_delimiters[1])
         e = re.escape(self.unit_str_end)
         unit_str = re.sub(f'[{s}{l}{r}{e}]', '', punit_str)
         try:
@@ -396,8 +396,8 @@ class QuantityCard(Card):
     def _full_unit_str(self, unit):
         unit_str = unit.to_string()
         s = self.unit_str_start
-        l = self.unit_str_delimeters[0]
-        r = self.unit_str_delimeters[1]
+        l = self.unit_str_delimiters[0]
+        r = self.unit_str_delimiters[1]
         e = self.unit_str_end
         return f'{s}{l}{unit_str}{r}{e}'
 
@@ -587,176 +587,6 @@ class QuantityHeader(Header):
         self._modified = True
 
 
-
-
-print('####### PR1 ########')
-
-#tc = Card('EXPTIME', 10, 'Exposure time in seconds')
-#print("Card('EXPTIME', 10, 'Exposure time in seconds')")
-#print(tc.image)
-#print(tc.value)
-#print(tc.comment)
-
-print('+++Create plain card')
-print(">>> c = QuantityCard('EXPTIME', 10, 'Exposure time in seconds')")
-c = QuantityCard('EXPTIME', 10, 'Exposure time in seconds')
-print(c.image)
-print(c.value)
-print(c.comment)
-
-print('+++Create card with units in comment')
-print(">>> c = QuantityCard('EXPTIME', 10, 'Exposure time (s)')")
-c = QuantityCard('EXPTIME', 10, 'Exposure time (s)')
-
-#rkaq = 'always'
-rkaq = 'recognized'
-c.return_key_as_quantity = rkaq
-
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-
-print('+++Change to non-unitful value')
-print('>>> c.value = 20')
-c.value = 20
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Change to value as Quantity')
-print('>>> c.value = 11*u.s')
-c.value = 11*u.s
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Change the comment, nuking the units')
-print(">>> c.comment = 'This is the start of a really long comment'")
-c.comment = 'This is the start of a really long comment'
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Put units back in with new unit property')
-print('>>> c.unit = u.s')
-c.unit = u.s
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Extend comment')
-print(">>> c.comment = 'This is the creation of a reallyreallyreallylon'")
-c.comment = 'This is the creation of a reallyreallyreallylon'
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Put units back into extended comment')
-print('>>> c.unit = u.s')
-c.unit = u.s
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Set units to None')
-print('>>> c.unit = None')
-c.unit = None
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Change unit location to beginning of comment')
-print("c.return_key_as_quantity = 'always'")
-c.return_key_as_quantity = 'always'
-print("c.unit_str_start = ''")
-c.unit_str_start = ''
-print("c.unit_str_delimeters = '[]'")
-c.unit_str_delimeters = '[]'
-print("c.unit_str_end = ' '")
-c.unit_str_end = ' '
-print("c.unit_str_position = 'start'")
-c.unit_str_position = 'start'
-
-print('+++Put new unit position back into extended comment')
-print('>>> c.unit = u.s')
-c.unit = u.s
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print('+++Put into header')
-print('hdr = Header([c])')
-hdr = QuantityHeader([c])
-print("hdr['EXPTIME']")
-print(hdr['EXPTIME'])
-print("hdr.get('EXPTIME')")
-print(hdr.get('EXPTIME'))
-print("hdr.comments['EXPTIME']")
-print(hdr.comments['EXPTIME'])
-print("hdr.cards['EXPTIME'].unit")
-print(hdr.cards['EXPTIME'].unit)
-
-#print(hdr['EXPTIME'] = ()
-print('+++ --> Header object assignment will need some work')
-print("hdr['EXPTIME'] = (12*u.s, 'Try to assign through Header object')")
-hdr['EXPTIME'] = (12*u.s, 'Try to assign through Header object')
-print(hdr['EXPTIME'])
-print("hdr.get('EXPTIME')")
-print(hdr.get('EXPTIME'))
-print("hdr.comments['EXPTIME']")
-print(hdr.comments['EXPTIME'])
-print("hdr.cards['EXPTIME'].unit")
-print(hdr.cards['EXPTIME'].unit)
-
-print("+++create a default card with units from scratch")
-print("c = QuantityCard('EXPTIME', 12*u.s, 'This is a new card')")
-c = QuantityCard('EXPTIME', 12*u.s, 'This is a new card')
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-print("+++turn on return key as Quantity feature")
-c.return_key_as_quantity = 'always'
-print('print(c.image)')
-print(c.image)
-print('print(c.value)')
-print(c.value)
-print('print(c.comment)')
-print(c.comment)
-
-
-
 ####### PR2 ########
 def fits_key_arithmetic(meta, operand1, operation, operand2,
                         keylist=None, handle_image=None):
@@ -874,199 +704,233 @@ class FitsKeyArithmeticMixin(NDArithmeticMixin):
         kwargs['meta'] = newmeta
         return result, kwargs
 
-print('####### PR2 ########')
+if __name__ == "__main__":
+    print('####### PR1 ########')
 
-print('Prepare QuantityHeader and FitsKeyArithmeticCCDData.  See code for details')
-print('which sets SATLEVEL and NONLIN as the cards that participate in the arithmetic')
+    #tc = Card('EXPTIME', 10, 'Exposure time in seconds')
+    #print("Card('EXPTIME', 10, 'Exposure time in seconds')")
+    #print(tc.image)
+    #print(tc.value)
+    #print(tc.comment)
 
-class FitsKeyArithmeticCCDData(FitsKeyArithmeticMixin, CCDData):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.arithmetic_keylist = ['satlevel', 'nonlin']
+    print('+++Create plain card')
+    print(">>> c = QuantityCard('EXPTIME', 10, 'Exposure time in seconds')")
+    c = QuantityCard('EXPTIME', 10, 'Exposure time in seconds')
+    print(c.image)
+    print(c.value)
+    print(c.comment)
 
-meta = {'EXPTIME': 10*u.s,
-        'CAMERA': 'SX694',
-        'SATLEVEL': 2**16*u.adu,
-        'NONLIN': 40000*u.adu}
-hdr = QuantityHeader(meta)
-ccd = FitsKeyArithmeticCCDData(18000*u.adu, meta=hdr)
-print('CCDData and unit:', ccdd, ccdd.unit)
-print(ccdd.meta.cards)
-print('+++divide by scalar 10')
-ccdd = ccd.divide(10, handle_meta='first_found')
-print(ccdd, ccdd.unit)
-print(ccdd.meta.cards)
+    print('+++Create card with units in comment')
+    print(">>> c = QuantityCard('EXPTIME', 10, 'Exposure time (s)')")
+    c = QuantityCard('EXPTIME', 10, 'Exposure time (s)')
 
-print('+++divide by Quantity 10*u.s')
-ccdd = ccd.divide(10*u.s, handle_meta='first_found')
-print('CCDData and unit:', ccdd, ccdd.unit)
-print(ccdd.meta.cards)
+    #rkaq = 'always'
+    rkaq = 'recognized'
+    c.return_key_as_quantity = rkaq
 
-print('+++divide by Quantity 10*u.adu/u.electron')
-ccdd = ccd.divide(10*u.adu/u.electron, handle_meta='first_found')
-print('CCDData and unit:', ccdd, ccdd.unit)
-print(ccdd.meta.cards)
-
-print('+++repeat for non-quanity Header')
-
-meta = {'EXPTIME': 10,
-        'CAMERA': 'SX694',
-        'SATLEVEL': 2**16,
-        'NONLIN': 40000}
-hdr = Header(meta)
-ccd = FitsKeyArithmeticCCDData(18000*u.adu, meta=hdr)
-print('CCDData and unit:', ccdd, ccdd.unit)
-print(ccd.meta.cards)
-print('+++divide by scalar 10')
-ccdd = ccd.divide(10, handle_meta='first_found')
-print('CCDData and unit:', ccdd, ccdd.unit)
-print(ccdd.meta.cards)
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
 
+    print('+++Change to non-unitful value')
+    print('>>> c.value = 20')
+    c.value = 20
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
+    print('+++Change to value as Quantity')
+    print('>>> c.value = 11*u.s')
+    c.value = 11*u.s
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
-## ccd = CCDData(0, unit=u.dimensionless_unscaled, meta=hdr)
-## # Add some comment text
+    print('+++Change the comment, nuking the units')
+    print(">>> c.comment = 'This is the start of a really long comment'")
+    c.comment = 'This is the start of a really long comment'
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
+    print('+++Put units back in with new unit property')
+    print('>>> c.unit = u.s')
+    c.unit = u.s
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
+    print('+++Extend comment')
+    print(">>> c.comment = 'This is the creation of a reallyreallyreallylon'")
+    c.comment = 'This is the creation of a reallyreallyreallylon'
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
-## # Make a basic CCD with hdr
-## meta = {'EXPTIME': 10,
-##         'CAMERA': 'SX694'}
-## hdr = FitsKeyQuantityHeader(meta)
-## ccd = CCDData(0, unit=u.dimensionless_unscaled, meta=hdr)
-## # Add some comment text
-## ccd.meta.comments['EXPTIME'] = 'Exposure time'
-## comment = ccd.meta.comments['EXPTIME']
-## print(f'original EXPTIME comment: "{comment}"')
-## 
-## print(ccd.meta.get_fits_key_unit('EXPTIME'))
-## ccd.meta.set_fits_key_unit('EXPTIME', u.s)
-## print(ccd.meta.get_fits_key_unit('EXPTIME'))
-## comment = ccd.meta.comments['EXPTIME']
-## print(comment)
-## print(ccd.meta.get_fits_key_unit('CAMERA'))
-## 
-## print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
-## ccd.meta.return_key_as_quantity = 'recognized'
-## print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
-## 
-## #ccd.meta['EXPTIME'] = 11
-## 
-## #ccd.meta['EXPTIME'] = 11*u.m
-## #print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
-## ccd.meta.del_fits_key_unit('EXPTIME')
-## ccd.meta[0] = 11*u.m
-## print(f'EXPTIME: {ccd.meta["EXPTIME"]}')
-##
+    print('+++Put units back into extended comment')
+    print('>>> c.unit = u.s')
+    c.unit = u.s
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
+    print('+++Set units to None')
+    print('>>> c.unit = None')
+    c.unit = None
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
-#flat_fname = '/data/io/IoIO/reduced/Calibration/2020-03-22_B_flat.fits'
-#
-#ccd = CCDData.read(flat_fname)
-#class Test(FitsKeyQuantityMixin, CCDData):
-#    pass
-#ccd = Test.read(flat_fname)
-#unit = ccd.get_fits_key_unit('EXPTIME')
-#print(unit)
-#unit = ccd.get_fits_key_unit('GAIN')
-#print(unit)
-#unit = ccd.get_fits_key_unit('SATLEVEL')
-#print(unit)
-#ccd.set_fits_key_unit('SATLEVEL', u.m)
-#print(ccd.meta.comments['SATLEVEL'])
-#
-#ccd.del_fits_key_unit('SATLEVEL')
-#print(ccd.meta.comments['SATLEVEL'])
-#
-#ccd.set_fits_key_unit('SATLEVEL', unit)
-#print(ccd.meta.comments['SATLEVEL'])
-#
-#print(ccd.get_fits_key_quantity('SATLEVEL'))
-#
-#comment = ccd.meta.comments['OVERSCAN_VALUE']
-#print(comment)
-#ccd.meta.comments['OVERSCAN_VALUE'] = 'make this long' + comment 
-#
-#comment = ccd.meta.comments['OVERSCAN_VALUE']
-#print(comment)
-#
-#unit = u.electron
-#ccd.set_fits_key_unit('OVERSCAN_VALUE', unit)
-#print(ccd.meta.comments['OVERSCAN_VALUE'])
+    print('+++Change unit location to beginning of comment')
+    print("c.return_key_as_quantity = 'always'")
+    c.return_key_as_quantity = 'always'
+    print("c.unit_str_start = ''")
+    c.unit_str_start = ''
+    print("c.unit_str_delimiters = '[]'")
+    c.unit_str_delimiters = '[]'
+    print("c.unit_str_end = ' '")
+    c.unit_str_end = ' '
+    print("c.unit_str_position = 'start'")
+    c.unit_str_position = 'start'
 
+    print('+++Put new unit position back into extended comment')
+    print('>>> c.unit = u.s')
+    c.unit = u.s
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
-#set_fits_key_quantity(key, quantity_comment, meta)
+    print('+++Put into header')
+    print('hdr = Header([c])')
+    hdr = QuantityHeader([c])
+    print("hdr['EXPTIME']")
+    print(hdr['EXPTIME'])
+    print("hdr.get('EXPTIME')")
+    print(hdr.get('EXPTIME'))
+    print("hdr.comments['EXPTIME']")
+    print(hdr.comments['EXPTIME'])
+    print("hdr.cards['EXPTIME'].unit")
+    print(hdr.cards['EXPTIME'].unit)
 
+    #print(hdr['EXPTIME'] = ()
+    print('+++ --> Header object assignment will need some work')
+    print("hdr['EXPTIME'] = (12*u.s, 'Try to assign through Header object')")
+    hdr['EXPTIME'] = (12*u.s, 'Try to assign through Header object')
+    print(hdr['EXPTIME'])
+    print("hdr.get('EXPTIME')")
+    print(hdr.get('EXPTIME'))
+    print("hdr.comments['EXPTIME']")
+    print(hdr.comments['EXPTIME'])
+    print("hdr.cards['EXPTIME'].unit")
+    print(hdr.cards['EXPTIME'].unit)
 
+    print("+++create a default card with units from scratch")
+    print("c = QuantityCard('EXPTIME', 12*u.s, 'This is a new card')")
+    c = QuantityCard('EXPTIME', 12*u.s, 'This is a new card')
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
 
-#class Test(FitsKeyArithmeticMixin, CCDData):
-#    def __init__(self, *args, **kwargs):
-#        super().__init__(*args, **kwargs)
-#        self.arithmetic_keylist = ['satlevel', 'nonlin']
-##ccd = Test.read(flat_fname)
-###print(ccd.meta)
-###ccdd = ccd.divide(10, handle_meta='first_found')
-###ccdd = ccd.divide(10*u.dimensionless_unscaled, handle_meta='first_found')
-###ccdd = ccd.divide(10, handle_meta='first_found')
-##ccdd = ccd.divide(10)
-##print(ccdd.meta)
-#
-###comment = 'this is a comment (electrons)'
-###comment = 'this is a comment (electron)'
-##comment = 'this is a comment'
-### Find () at very end of line which is our format for a unit designation
-##m = re.search(r'(.)$', comment)
-##m = re.search(r"\((\w+)\)", comment)
-##if m is None:
-##    log.debug(f'no unit in {comment}')
-##punit_str = m.group(0)
-##unit_str = re.sub('[()]', '', punit_str)
-##try:
-##    unit = u.Unit(unit_str)
-##except ValueError as e:
-##    log.warning(e)
-##    unit = None
-##print(unit_str)
-#
-#flat_fname = '/data/io/IoIO/reduced/Calibration/2020-03-22_B_flat.fits'
-#ccd = CCDData.read(flat_fname)
-#unit = get_fits_key_unit('EXPTIME', ccd.meta)
-#unit = get_fits_key_unit('GAIN', ccd.meta)
-#print(ccd.meta.comments['SATLEVEL'])
-#unit = get_fits_key_unit('SATLEVEL', ccd.meta)
-#print(unit)
-#
-#set_fits_key_unit('SATLEVEL', u.m, ccd.meta)
-#print(ccd.meta.comments['SATLEVEL'])
-#
-#
-#del_fits_key_unit('SATLEVEL', ccd.meta)
-#print(ccd.meta.comments['SATLEVEL'])
-#
-#set_fits_key_unit('SATLEVEL', unit, ccd.meta)
-#print(ccd.meta.comments['SATLEVEL'])
-#
-#print(get_fits_key_quantity('SATLEVEL', ccd.meta))
-#
-#key = 'SATLEVEL'
-#value = 19081.35378864727
-#comment = ccd.meta.comments[key]
-##c = fits.Card(key, value, comment+comment)
-#c = fits.Card(key, value, comment)
-#
-#comment = ccd.meta.comments['OVERSCAN_VALUE']
-#print(comment)
-#ccd.meta.comments['OVERSCAN_VALUE'] = 'make this long' + comment 
-#
-#comment = ccd.meta.comments['OVERSCAN_VALUE']
-#print(comment)
-#
-#
-#unit = u.electron
-#set_fits_key_unit('OVERSCAN_VALUE', unit, ccd.meta)
-#print(ccd.meta.comments['OVERSCAN_VALUE'])
-#
-##set_fits_key_quantity(key, quantity_comment, meta)
-#
+    print("+++turn on return key as Quantity feature")
+    c.return_key_as_quantity = 'always'
+    print('print(c.image)')
+    print(c.image)
+    print('print(c.value)')
+    print(c.value)
+    print('print(c.comment)')
+    print(c.comment)
+
+    print('####### PR2 ########')
+
+    print('Prepare QuantityHeader and FitsKeyArithmeticCCDData.  See code for details')
+    print('which sets SATLEVEL and NONLIN as the cards that participate in the arithmetic')
+
+    class FitsKeyArithmeticCCDData(FitsKeyArithmeticMixin, CCDData):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.arithmetic_keylist = ['satlevel', 'nonlin']
+
+    meta = {'EXPTIME': 10*u.s,
+            'CAMERA': 'SX694',
+            'SATLEVEL': 2**16*u.adu,
+            'NONLIN': 40000*u.adu}
+    hdr = QuantityHeader(meta)
+    ccd = FitsKeyArithmeticCCDData(18000*u.adu, meta=hdr)
+    print('Original CCDData and unit:', ccd, ccd.unit)
+    print(ccd.meta.cards)
+    print('+++divide by scalar 10')
+    ccdd = ccd.divide(10, handle_meta='first_found')
+    print(ccdd, ccdd.unit)
+    print(ccdd.meta.cards)
+
+    print('+++divide by Quantity 10*u.s')
+    ccdd = ccd.divide(10*u.s, handle_meta='first_found')
+    print('CCDData and unit:', ccdd, ccdd.unit)
+    print(ccdd.meta.cards)
+
+    print('+++divide by Quantity 10*u.adu/u.electron')
+    ccdd = ccd.divide(10*u.adu/u.electron, handle_meta='first_found')
+    print('CCDData and unit:', ccdd, ccdd.unit)
+    print(ccdd.meta.cards)
+
+    print('+++repeat for non-quanity Header')
+
+    meta = {'EXPTIME': 10,
+            'CAMERA': 'SX694',
+            'SATLEVEL': 2**16,
+            'NONLIN': 40000}
+    hdr = Header(meta)
+    ccd = FitsKeyArithmeticCCDData(18000*u.adu, meta=hdr)
+    print('CCDData and unit:', ccdd, ccdd.unit)
+    print(ccd.meta.cards)
+    print('+++divide by scalar 10')
+    ccdd = ccd.divide(10, handle_meta='first_found')
+    print('CCDData and unit:', ccdd, ccdd.unit)
+    print(ccdd.meta.cards)
+
+    print('+++repeat without handle_meta="first_found"')
+    meta = {'EXPTIME': 10,
+            'CAMERA': 'SX694',
+            'SATLEVEL': 2**16,
+            'NONLIN': 40000}
+    hdr = Header(meta)
+    ccd = FitsKeyArithmeticCCDData(18000*u.adu, meta=hdr)
+    print('CCDData and unit:', ccdd, ccdd.unit)
+    print(ccd.meta.cards)
+    print('+++divide by scalar 10')
+    ccdd = ccd.divide(10)
+    print('CCDData and unit:', ccdd, ccdd.unit)
+    print(ccdd.meta.cards)
+
 

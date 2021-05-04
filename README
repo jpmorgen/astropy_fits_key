@@ -1,0 +1,34 @@
+Sun May 02 18:29:45 2021 EDT  jpmorgen@snipe
+
+The attached file implements two draft PRs as subclasses of existing astropy objects.  The file includes extensive test/demonstration code in __main__
+
+PR1: QuantityCard, QuantityHeader
+
+(1) Adds `unit` property to Cards
+
+(2) `unit` property can be set directly, using Card.value as a Quantity, or by inserting an appropriately formatted unit string to Card.comment
+
+(2a) Setting Card.value = Quantity ALWAYS does the right thing, since it sets Card.unit and adds a unit string to Card.comment
+
+(3) Default behavior of extraction of value as Quantity is controlled using `return_key_as_quantity` property
+
+(3a) Accessing Card.unit always works (or returns None) and therefore may end up being preferred way of reliably constructing the Quantity of a card.  The Card.unit property could be used at the Header level to implement something like a "Header.get_quantity(key)" method
+
+(4) The presentation of unit.to_string() within the Card.comment string is controlled by property which currently defaults to:
+
+unit_str_start = ' '
+unit_str_delimiters = '()'
+unit_str_end = ''
+unit_str_position = 'end'
+
+This puts a unit string such as " (s)" on the end of a comment.  I think this looks better when there is other explanatory text in the comment.  However, when there is no text at all, putting it at the beginning as recommended by @timj looks better.  I am totally open to the community vote on that.
+
+PR1 TODO: improve integration with Header (e.g. 3a).
+
+PR2: FitsKeyArithmeticMixin
+
+This PR enables NDArithmetic-style arithmetic on fits keys listed in the `arithmetic_keylist` property.  Handles Card units if present, otherwise defaults to assuming cards have the same unit as the invoking CCDData.
+
+TODO: Resolve angst about what to do when user (or underlying routines user is using, like ccdproc.gain_correct) doesn't specify handle_meta="first_found" in call to ccd.<arithmetic_operation> or otherwise make the CCDData meta available in NDData._arithmetic.  Currently, specification of `arithmetic_keylist` always triggers handle_meta="first_found"-like behavior.
+
+
