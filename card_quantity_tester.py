@@ -227,7 +227,7 @@ print(hdr.quantity('EXPTIME'))
 
 print('+++ --> Header object assignment with unit in comment')
 print("hdr['EXPTIME'] = (12, 'Assign through Header object (s)')")
-hdr['EXPTIME'] = (12*u.s, 'Assign through Header object')
+hdr['EXPTIME'] = (12, 'Assign through Header object (s)')
 print("hdr['EXPTIME']")
 print(hdr['EXPTIME'])
 print("hdr.get('EXPTIME')")
